@@ -1,0 +1,56 @@
+[project]
+name = "open-webui-benchmark"
+version = "0.1.0"
+description = "Benchmarking suite for Open WebUI"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+
+# Dependencies - using existing Open WebUI dependencies where possible
+dependencies = [
+    # Already in Open WebUI - reusing
+    "httpx>=0.28.0",           # HTTP client (already in Open WebUI)
+    "aiohttp>=3.12.0",         # Async HTTP (already in Open WebUI)
+    "python-socketio>=5.13.0", # WebSocket client (already in Open WebUI)
+    "pydantic>=2.11.0",        # Data validation (already in Open WebUI)
+    "PyYAML>=6.0",             # YAML parsing (already in Open WebUI via dependencies)
+    
+    # Benchmark-specific additions
+    "locust>=2.32.0",          # Load testing framework
+    "rich>=13.0.0",            # Beautiful terminal output
+    "docker>=7.0.0",           # Docker SDK for resource management
+    "psutil>=5.9.0",           # System monitoring (already in Open WebUI)
+    "pandas>=2.2.0",           # Data analysis (already in Open WebUI)
+    "matplotlib>=3.8.0",       # Plotting results
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "black>=24.0.0",
+    "ruff>=0.5.0",
+]
+
+[project.scripts]
+owb = "benchmark.cli:main"
+open-webui-benchmark = "benchmark.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["benchmark"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.black]
+line-length = 88
+target-version = ["py311"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"

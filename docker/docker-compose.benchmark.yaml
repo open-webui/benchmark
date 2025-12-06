@@ -1,0 +1,39 @@
+# Docker Compose configuration for Open WebUI benchmarking
+# This configuration includes resource constraints based on compute profiles
+
+services:
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:${WEBUI_DOCKER_TAG:-main}
+    container_name: open-webui-benchmark
+    volumes:
+      - open-webui-benchmark-data:/app/backend/data
+    ports:
+      - "${OPEN_WEBUI_PORT:-3000}:8080"
+    environment:
+      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY:-benchmark-secret-key}
+      - ENABLE_WEBSOCKET_SUPPORT=true
+      # Disable external services for isolated benchmarking
+      - OLLAMA_BASE_URL=
+      - OPENAI_API_KEY=
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    restart: unless-stopped
+    # Resource constraints - adjust based on compute profile
+    # Default profile: 2 CPUs, 8GB RAM
+    deploy:
+      resources:
+        limits:
+          cpus: "${CPU_LIMIT:-2.0}"
+          memory: "${MEMORY_LIMIT:-8g}"
+        reservations:
+          cpus: "${CPU_RESERVATION:-1.0}"
+          memory: "${MEMORY_RESERVATION:-4g}"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  open-webui-benchmark-data:

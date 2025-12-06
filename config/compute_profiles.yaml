@@ -1,0 +1,82 @@
+# Open WebUI Benchmark - Compute Profiles
+# Defines the resource constraints for different benchmark configurations
+
+profiles:
+  # Default profile for local MacBook testing
+  # Represents a realistic Docker container configuration
+  default:
+    name: "Default Local"
+    description: "Standard profile for local development and testing on MacBook"
+    resources:
+      cpus: 2.0
+      memory: "8g"
+      memory_swap: "8g"
+      memory_reservation: "4g"
+    docker:
+      cpu_shares: 1024
+      cpu_period: 100000
+      cpu_quota: 200000  # 2 CPUs worth
+    
+  # Minimal profile for testing lower bounds
+  minimal:
+    name: "Minimal"
+    description: "Minimal resources to test lower performance bounds"
+    resources:
+      cpus: 1.0
+      memory: "4g"
+      memory_swap: "4g"
+      memory_reservation: "2g"
+    docker:
+      cpu_shares: 512
+      cpu_period: 100000
+      cpu_quota: 100000  # 1 CPU worth
+
+  # Standard cloud profile (small VM equivalent)
+  cloud_small:
+    name: "Cloud Small"
+    description: "Equivalent to a small cloud VM (2 vCPU, 4GB RAM)"
+    resources:
+      cpus: 2.0
+      memory: "4g"
+      memory_swap: "4g"
+      memory_reservation: "2g"
+    docker:
+      cpu_shares: 1024
+      cpu_period: 100000
+      cpu_quota: 200000
+
+  # Medium cloud profile
+  cloud_medium:
+    name: "Cloud Medium"
+    description: "Equivalent to a medium cloud VM (4 vCPU, 8GB RAM)"
+    resources:
+      cpus: 4.0
+      memory: "8g"
+      memory_swap: "8g"
+      memory_reservation: "4g"
+    docker:
+      cpu_shares: 2048
+      cpu_period: 100000
+      cpu_quota: 400000
+
+  # Large cloud profile
+  cloud_large:
+    name: "Cloud Large"
+    description: "Equivalent to a large cloud VM (8 vCPU, 16GB RAM)"
+    resources:
+      cpus: 8.0
+      memory: "16g"
+      memory_swap: "16g"
+      memory_reservation: "8g"
+    docker:
+      cpu_shares: 4096
+      cpu_period: 100000
+      cpu_quota: 800000
+
+# Default profile to use if not specified
+default_profile: "default"
+
+# Network configuration for benchmarks
+network:
+  name: "open-webui-benchmark"
+  driver: "bridge"

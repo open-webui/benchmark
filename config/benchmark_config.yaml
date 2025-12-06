@@ -1,0 +1,95 @@
+# Open WebUI Benchmark Configuration
+# Global settings for benchmark execution
+
+benchmark:
+  # Default target URL for Open WebUI instance
+  target_url: "http://localhost:3000"
+  
+  # Default timeout for HTTP requests (seconds)
+  request_timeout: 30
+  
+  # Default timeout for WebSocket connections (seconds)
+  websocket_timeout: 60
+  
+  # Number of times to repeat the full benchmark (for averaging results)
+  # Set to 1 for capacity testing, higher for statistical significance
+  iterations: 1
+  
+  # Warm-up requests before actual benchmark
+  warmup_requests: 10
+  
+  # Cool-down period between benchmarks (seconds)
+  cooldown_seconds: 5
+
+# Output configuration
+output:
+  # Directory for benchmark results (relative to benchmark root)
+  results_dir: "results"
+  
+  # Formats for output (json, csv, html)
+  formats:
+    - json
+    - csv
+  
+  # Include detailed timing information
+  include_timing_details: true
+  
+  # Include resource metrics from Docker
+  include_resource_metrics: true
+
+# Logging configuration
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "logs/benchmark.log"
+
+# Default test user configuration
+test_users:
+  admin:
+    email: "admin@benchmark.local"
+    password: "benchmark_admin_password_123"
+    name: "Benchmark Admin"
+    role: "admin"
+  
+  user_template:
+    email_pattern: "user{n}@benchmark.local"
+    password: "benchmark_user_password_123"
+    name_pattern: "Test User {n}"
+    role: "user"
+
+# Channel benchmark specific settings
+channels:
+  # Maximum number of concurrent users to test
+  max_concurrent_users: 100
+  
+  # Step size for ramping up users
+  user_step_size: 10
+  
+  # Ramp-up time per step (seconds)
+  ramp_up_time: 5
+  
+  # Sustain time at each level (seconds)
+  sustain_time: 30
+  
+  # Message frequency per user (messages per second)
+  message_frequency: 0.5
+  
+  # Message size distribution (bytes)
+  message_size:
+    min: 50
+    max: 500
+    avg: 200
+
+# Performance thresholds for pass/fail criteria
+thresholds:
+  # Maximum acceptable response time (ms)
+  max_response_time_ms: 2000
+  
+  # Maximum acceptable 95th percentile response time (ms)
+  max_p95_response_time_ms: 3000
+  
+  # Maximum acceptable error rate (percentage)
+  max_error_rate_percent: 1.0
+  
+  # Minimum acceptable requests per second
+  min_requests_per_second: 10

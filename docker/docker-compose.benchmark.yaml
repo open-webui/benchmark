@@ -13,8 +13,8 @@ services:
     environment:
       - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY:-benchmark-secret-key}
       - ENABLE_WEBSOCKET_SUPPORT=true
-      # Disable external services for isolated benchmarking
-      - OLLAMA_BASE_URL=
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-}
+      - ENABLE_CHANNELS=${ENABLE_CHANNELS:-true}
       - OPENAI_API_KEY=
     extra_hosts:
       - host.docker.internal:host-gateway

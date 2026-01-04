@@ -96,15 +96,21 @@ class ChannelConcurrencyBenchmark(BaseBenchmark):
         if not await self._admin_client.wait_for_ready():
             raise RuntimeError("Open WebUI service not ready")
         
-        # Authenticate admin (must already exist)
+        # Authenticate admin
         admin_config = self.config.admin_user
         try:
             await self._admin_client.signin(admin_config.email, admin_config.password)
-        except Exception as e:
-            raise RuntimeError(
-                f"Failed to sign in as admin ({admin_config.email}). "
-                f"Make sure this user exists in Open WebUI. Error: {e}"
-            )
+        except Exception:
+            try:
+                await self._admin_client.signup(
+                    admin_config.email,
+                    admin_config.password,
+                    admin_config.name,
+                )
+            except Exception as e:
+                raise RuntimeError(
+                    f"Failed to authenticate admin ({admin_config.email}): {e}"
+                )
         
         # Create test channel
         channel_name = f"benchmark-channel-{int(time.time())}"
@@ -502,22 +508,27 @@ class ChannelWebSocketBenchmark(BaseBenchmark):
         if not await self._admin_client.wait_for_ready():
             raise RuntimeError("Open WebUI service not ready")
         
-        # Authenticate admin
+        # Authenticate admin (create if doesn't exist - first user becomes admin)
+        admin_config = self.
         admin_config = self.config.admin_user
-        if admin_config:
+        if not admin_config:
+            raise RuntimeError(
+                "Admin credentials not configured. "
+                "Set ADMIN_USER_EMAIL and ADMIN_USER_PASSWORD."
+            )
+        
+        try:
+            await self._admin_client.signin(admin_config.email, admin_config.password)
+        except Exception:
             try:
-                await self._admin_client.signin(admin_config.email, admin_config.password)
-            except Exception:
                 await self._admin_client.signup(
                     admin_config.email,
                     admin_config.password,
                     admin_config.name,
                 )
-        else:
-            try:
-                await self._admin_client.signin("admin@benchmark.local", "benchmark_admin_123")
-            except Exception:
-                await self._admin_client.signup("admin@benchmark.local", "benchmark_admin_123", "Benchmark Admin")
+            except Exception as e:
+                raise RuntimeError(
+                    f"Failed to authenticate admin ({admin_config.email}): {e
         
         # Create test channel
         channel_name = f"benchmark-ws-channel-{int(time.time())}"
@@ -543,10 +554,11 @@ class ChannelWebSocketBenchmark(BaseBenchmark):
         channel_config = self.config.channels
         user_count = min(channel_config.max_concurrent_users, 50)  # Limit for WS test
         
-        # Create HTTP clients for users
-        clients = await self._client_pool.create_clients(
+        # Create HTTP clients for users via admin API
+        clients = await self._client_pool.create_benchmark_users(
+            admin_client=self._admin_client,
             count=user_count,
-            email_pattern=self.config.user_template.email_pattern,
+            emailtest usersmail_pattern,
             password=self.config.user_template.password,
             name_pattern=self.config.user_template.name_pattern,
         )

@@ -126,6 +126,9 @@ class BenchmarkRunner:
         # Display result summary
         self._display_result_summary(result)
         
+        # Write results to file
+        self._write_results([result])
+        
         return result
     
     async def run_all(self) -> List[BenchmarkResult]:

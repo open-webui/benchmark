@@ -102,6 +102,37 @@ async def run_channel_benchmark(
     return result
 
 
+async def run_channel_ws_benchmark(
+    profile_id: str = "default",
+    target_url: Optional[str] = None,
+    max_users: Optional[int] = None,
+    output_dir: Optional[str] = None,
+):
+    """Run the channel WebSocket benchmark."""
+    # Load config with overrides
+    overrides = {}
+    if target_url:
+        overrides["target_url"] = target_url
+    
+    config = load_config(profile_id, overrides=overrides)
+    
+    if max_users:
+        config.channels.max_concurrent_users = max_users
+    
+    # Create runner
+    runner = BenchmarkRunner(
+        config=config,
+        profile_id=profile_id,
+        output_dir=Path(output_dir) if output_dir else None,
+    )
+    
+    # Run benchmark
+    result = await runner.run_benchmark(ChannelWebSocketBenchmark)
+    runner.display_final_summary()
+    
+    return result
+
+
 async def run_all_benchmarks(
     profile_id: str = "default",
     target_url: Optional[str] = None,
@@ -212,6 +243,13 @@ def main():
                     target_url=args.url,
                     max_users=args.max_users,
                     step_size=args.step_size,
+                    output_dir=args.output,
+                ))
+            elif args.benchmark == "channels-ws":
+                asyncio.run(run_channel_ws_benchmark(
+                    profile_id=args.profile,
+                    target_url=args.url,
+                    max_users=args.max_users,
                     output_dir=args.output,
                 ))
             else:

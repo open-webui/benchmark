@@ -71,7 +71,7 @@ owb run channels -p cloud_medium
 
 3. **View results:**
 
-Results are saved to the `results/` directory in JSON and CSV formats.
+Results are saved to `results/` in JSON, CSV, and text formats.
 
 ## Compute Profiles
 
@@ -126,19 +126,25 @@ Configuration files are located in `config/`:
 
 ### Environment Variables
 
+All configuration can be set via environment variables (loaded from `.env` file):
+
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `OPEN_WEBUI_URL` | Open WebUI URL for benchmarking | `http://localhost:8080` |
-| `ADMIN_USER_EMAIL` | Admin user email (required) | - |
-| `ADMIN_USER_PASSWORD` | Admin user password (required) | - |
-| `OPEN_WEBUI_PORT` | Port for Docker container | `8080` |
-| `CPU_LIMIT` | CPU limit for container | `2.0` |
-| `MEMORY_LIMIT` | Memory limit for container | `8g` |
-
-## Extending the Benchmark Suite
-
-### Adding a New Benchmark
-
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `OPEN_WEBUI_URL` | Open WebUI URL | `http://localhost:8080` |
+| `OLLAMA_BASE_URL` | Ollama API URL | `http://host.docker.internal:11434` |
+| `ENABLE_CHANNELS` | Enable Channels feature | `true` |
+| `ADMIN_USER_EMAIL` | Admin email | - |
+| `ADMIN_USER_PASSWORD` | Admin password | - |
+| `MAX_CONCURRENT_USERS` | Max concurrent users | `50` |
+| `USER_STEP_SIZE` | User increment step | `10` |
+| `SUSTAIN_TIME_SECONDS` | Test duration per level | `30` |
+| `MESSAGE_FREQUENCY` | Messages/sec per user | `0.5` |
+| `OPEN_WEBUI_PORT` | Container port | `8080` |
+| `CPU_LIMIT` | CPU limit | `2.0` |
+| `MEMORY_LIMIT` | Memory limit | `8g` |
 1. Create a new file in `benchmark/scenarios/`:
 
 ```python

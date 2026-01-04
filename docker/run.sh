@@ -6,6 +6,13 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BENCHMARK_DIR="$(dirname "$SCRIPT_DIR")"
 
+# Load .env file if present
+if [ -f "$BENCHMARK_DIR/.env" ]; then
+    set -a
+    source "$BENCHMARK_DIR/.env"
+    set +a
+fi
+
 # Default profile values (matches "default" compute profile)
 CPU_LIMIT="${CPU_LIMIT:-2.0}"
 MEMORY_LIMIT="${MEMORY_LIMIT:-8g}"
@@ -58,12 +65,16 @@ echo "Starting Open WebUI with profile: $PROFILE"
 echo "  CPU Limit: $CPU_LIMIT"
 echo "  Memory Limit: $MEMORY_LIMIT"
 echo "  Port: $OPEN_WEBUI_PORT"
+echo "  Ollama Base URL: ${OLLAMA_BASE_URL:-not set}"
+echo "  Channels Enabled: ${ENABLE_CHANNELS:-true}"
 
 export CPU_LIMIT
 export MEMORY_LIMIT
 export CPU_RESERVATION
 export MEMORY_RESERVATION
 export OPEN_WEBUI_PORT
+export OLLAMA_BASE_URL
+export ENABLE_CHANNELS
 
 cd "$SCRIPT_DIR"
 docker compose -f docker-compose.benchmark.yaml up -d

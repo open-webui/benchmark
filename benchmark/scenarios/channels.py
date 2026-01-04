@@ -508,8 +508,7 @@ class ChannelWebSocketBenchmark(BaseBenchmark):
         if not await self._admin_client.wait_for_ready():
             raise RuntimeError("Open WebUI service not ready")
         
-        # Authenticate admin (create if doesn't exist - first user becomes admin)
-        admin_config = self.
+        # Authenticate admin
         admin_config = self.config.admin_user
         if not admin_config:
             raise RuntimeError(
@@ -528,7 +527,8 @@ class ChannelWebSocketBenchmark(BaseBenchmark):
                 )
             except Exception as e:
                 raise RuntimeError(
-                    f"Failed to authenticate admin ({admin_config.email}): {e
+                    f"Failed to authenticate admin ({admin_config.email}): {e}"
+                )
         
         # Create test channel
         channel_name = f"benchmark-ws-channel-{int(time.time())}"
@@ -554,11 +554,11 @@ class ChannelWebSocketBenchmark(BaseBenchmark):
         channel_config = self.config.channels
         user_count = min(channel_config.max_concurrent_users, 50)  # Limit for WS test
         
-        # Create HTTP clients for users via admin API
+        # Create test users
         clients = await self._client_pool.create_benchmark_users(
             admin_client=self._admin_client,
             count=user_count,
-            emailtest usersmail_pattern,
+            email_pattern=self.config.user_template.email_pattern,
             password=self.config.user_template.password,
             name_pattern=self.config.user_template.name_pattern,
         )

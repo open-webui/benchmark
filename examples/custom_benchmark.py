@@ -2,7 +2,8 @@
 Example showing how to create a custom benchmark.
 
 This demonstrates extending the base benchmark class to create
-new benchmark scenarios.
+new benchmark scenarios, using the auth entrypoint for consistent
+authentication handling.
 """
 
 import asyncio
@@ -13,6 +14,11 @@ from benchmark.core.base import BaseBenchmark
 from benchmark.core.config import BenchmarkConfig
 from benchmark.core.metrics import BenchmarkResult
 from benchmark.clients.http_client import OpenWebUIClient
+from benchmark.auth import (
+    ensure_admin_authenticated,
+    AuthenticationError,
+    ServiceNotReadyError,
+)
 
 
 class APILatencyBenchmark(BaseBenchmark):
@@ -34,35 +40,37 @@ class APILatencyBenchmark(BaseBenchmark):
         ("GET", "/health"),
     ]
     
-    def __init__(self, config: BenchmarkConfig):
-        """Initialize the benchmark."""
+    def __init__(
+        self,
+        config: BenchmarkConfig,
+        admin_client: Optional[OpenWebUIClient] = None,
+    ):
+        """
+        Initialize the benchmark.
+        
+        Args:
+            config: Benchmark configuration
+            admin_client: Optional pre-authenticated admin client
+        """
         super().__init__(config)
-        self._client: Optional[OpenWebUIClient] = None
+        self._client: Optional[OpenWebUIClient] = admin_client
+        self._owns_client: bool = admin_client is None
     
     async def setup(self) -> None:
-        """Set up the benchmark environment."""
-        self._client = OpenWebUIClient(
-            self.config.target_url,
-            self.config.request_timeout,
-        )
-        await self._client.connect()
-        
-        # Wait for service
-        if not await self._client.wait_for_ready():
-            raise RuntimeError("Open WebUI service not ready")
-        
-        # Authenticate
-        try:
-            await self._client.signin(
-                "admin@benchmark.local",
-                "benchmark_admin_123",
-            )
-        except Exception:
-            await self._client.signup(
-                "admin@benchmark.local",
-                "benchmark_admin_123",
-                "Benchmark Admin",
-            )
+        """Set up the benchmark environment using auth entrypoint."""
+        if self._client is None:
+            try:
+                self._client, auth_result = await ensure_admin_authenticated(
+                    base_url=self.config.target_url,
+                    timeout=self.config.request_timeout,
+                )
+                print(f"Authenticated as: {auth_result.user.email}")
+                if auth_result.is_new_signup:
+                    print("(Created new admin account)")
+            except ServiceNotReadyError as e:
+                raise RuntimeError(f"Service not ready: {e}")
+            except AuthenticationError as e:
+                raise RuntimeError(f"Authentication failed: {e}")
     
     async def run(self) -> BenchmarkResult:
         """Execute the benchmark."""
@@ -112,7 +120,7 @@ class APILatencyBenchmark(BaseBenchmark):
     
     async def teardown(self) -> None:
         """Clean up resources."""
-        if self._client:
+        if self._client and self._owns_client:
             await self._client.close()
 
 

@@ -22,6 +22,7 @@ from benchmark.core.config import BenchmarkConfig
 from benchmark.core.metrics import MetricsCollector, BenchmarkResult
 from benchmark.clients.http_client import OpenWebUIClient, ClientPool
 from benchmark.clients.websocket_client import WebSocketClient, WebSocketPool
+from benchmark.auth import ensure_admin_authenticated, AuthenticationError, ServiceNotReadyError
 
 
 console = Console()
@@ -58,11 +59,24 @@ class ChannelConcurrencyBenchmark(BaseBenchmark):
     description = "Test concurrent user capacity in Open WebUI Channels"
     version = "1.0.0"
     
-    def __init__(self, config: BenchmarkConfig):
-        """Initialize the channel concurrency benchmark."""
+    def __init__(
+        self,
+        config: BenchmarkConfig,
+        admin_client: Optional[OpenWebUIClient] = None,
+    ):
+        """
+        Initialize the channel concurrency benchmark.
+        
+        Args:
+            config: Benchmark configuration
+            admin_client: Optional pre-authenticated admin client. If provided,
+                         skips authentication during setup. If None, performs
+                         authentication using credentials from environment.
+        """
         super().__init__(config)
         
-        self._admin_client: Optional[OpenWebUIClient] = None
+        self._admin_client: Optional[OpenWebUIClient] = admin_client
+        self._owns_admin_client: bool = admin_client is None  # Track if we should close it
         self._client_pool: Optional[ClientPool] = None
         self._ws_pool: Optional[WebSocketPool] = None
         self._test_channel_id: Optional[str] = None
@@ -72,45 +86,28 @@ class ChannelConcurrencyBenchmark(BaseBenchmark):
         """
         Set up the benchmark environment.
         
-        Uses admin credentials to:
-        1. Create a test channel
-        2. Create temporary benchmark users dynamically
+        If no pre-authenticated admin client was provided, uses the auth
+        entrypoint to authenticate. Then:
+        1. Creates a test channel
+        2. Initializes client pool for benchmark users
         
-        Requires ADMIN_USER_EMAIL and ADMIN_USER_PASSWORD in environment.
+        Requires ADMIN_USER_EMAIL and ADMIN_USER_PASSWORD in environment
+        if admin_client was not provided to __init__.
         """
-        # Validate that we have admin credentials configured
-        if not self.config.admin_user:
-            raise RuntimeError(
-                "Admin user credentials not configured. "
-                "Set ADMIN_USER_EMAIL and ADMIN_USER_PASSWORD environment variables."
-            )
-        
-        # Create admin client
-        self._admin_client = OpenWebUIClient(
-            self.config.target_url,
-            self.config.request_timeout,
-        )
-        await self._admin_client.connect()
-        
-        # Wait for service to be ready
-        if not await self._admin_client.wait_for_ready():
-            raise RuntimeError("Open WebUI service not ready")
-        
-        # Authenticate admin
-        admin_config = self.config.admin_user
-        try:
-            await self._admin_client.signin(admin_config.email, admin_config.password)
-        except Exception:
+        # Use provided client or authenticate via entrypoint
+        if self._admin_client is None:
             try:
-                await self._admin_client.signup(
-                    admin_config.email,
-                    admin_config.password,
-                    admin_config.name,
+                self._admin_client, _auth_result = await ensure_admin_authenticated(
+                    base_url=self.config.target_url,
+                    timeout=self.config.request_timeout,
+                    wait_for_service=True,
                 )
-            except Exception as e:
-                raise RuntimeError(
-                    f"Failed to authenticate admin ({admin_config.email}): {e}"
-                )
+                # Note: We don't print here to avoid interfering with progress display
+                # Use `owb auth verify` beforehand to see auth details
+            except ServiceNotReadyError as e:
+                raise RuntimeError(f"Open WebUI service not ready: {e}")
+            except AuthenticationError as e:
+                raise RuntimeError(f"Admin authentication failed: {e}")
         
         # Create test channel
         channel_name = f"benchmark-channel-{int(time.time())}"
@@ -462,8 +459,8 @@ class ChannelConcurrencyBenchmark(BaseBenchmark):
             except Exception:
                 pass
         
-        # Close admin client
-        if self._admin_client:
+        # Close admin client only if we created it
+        if self._admin_client and self._owns_admin_client:
             await self._admin_client.close()
         
         # Close any remaining pooled clients
@@ -487,48 +484,49 @@ class ChannelWebSocketBenchmark(BaseBenchmark):
     description = "Test WebSocket scalability in Open WebUI Channels"
     version = "1.0.0"
     
-    def __init__(self, config: BenchmarkConfig):
-        """Initialize the WebSocket benchmark."""
+    def __init__(
+        self,
+        config: BenchmarkConfig,
+        admin_client: Optional[OpenWebUIClient] = None,
+    ):
+        """
+        Initialize the WebSocket benchmark.
+        
+        Args:
+            config: Benchmark configuration
+            admin_client: Optional pre-authenticated admin client. If provided,
+                         skips authentication during setup. If None, performs
+                         authentication using credentials from environment.
+        """
         super().__init__(config)
         
-        self._admin_client: Optional[OpenWebUIClient] = None
+        self._admin_client: Optional[OpenWebUIClient] = admin_client
+        self._owns_admin_client: bool = admin_client is None  # Track if we should close it
         self._client_pool: Optional[ClientPool] = None
         self._ws_pool: Optional[WebSocketPool] = None
         self._test_channel_id: Optional[str] = None
     
     async def setup(self) -> None:
-        """Set up benchmark environment."""
-        # Similar to ChannelConcurrencyBenchmark setup
-        self._admin_client = OpenWebUIClient(
-            self.config.target_url,
-            self.config.request_timeout,
-        )
-        await self._admin_client.connect()
+        """
+        Set up benchmark environment.
         
-        if not await self._admin_client.wait_for_ready():
-            raise RuntimeError("Open WebUI service not ready")
-        
-        # Authenticate admin
-        admin_config = self.config.admin_user
-        if not admin_config:
-            raise RuntimeError(
-                "Admin credentials not configured. "
-                "Set ADMIN_USER_EMAIL and ADMIN_USER_PASSWORD."
-            )
-        
-        try:
-            await self._admin_client.signin(admin_config.email, admin_config.password)
-        except Exception:
+        If no pre-authenticated admin client was provided, uses the auth
+        entrypoint to authenticate. Then creates test channel and initializes pools.
+        """
+        # Use provided client or authenticate via entrypoint
+        if self._admin_client is None:
             try:
-                await self._admin_client.signup(
-                    admin_config.email,
-                    admin_config.password,
-                    admin_config.name,
+                self._admin_client, _auth_result = await ensure_admin_authenticated(
+                    base_url=self.config.target_url,
+                    timeout=self.config.request_timeout,
+                    wait_for_service=True,
                 )
-            except Exception as e:
-                raise RuntimeError(
-                    f"Failed to authenticate admin ({admin_config.email}): {e}"
-                )
+                # Note: We don't print here to avoid interfering with progress display
+                # Use `owb auth verify` beforehand to see auth details
+            except ServiceNotReadyError as e:
+                raise RuntimeError(f"Open WebUI service not ready: {e}")
+            except AuthenticationError as e:
+                raise RuntimeError(f"Admin authentication failed: {e}")
         
         # Create test channel
         channel_name = f"benchmark-ws-channel-{int(time.time())}"
@@ -621,7 +619,8 @@ class ChannelWebSocketBenchmark(BaseBenchmark):
             except Exception:
                 pass
         
-        if self._admin_client:
+        # Close admin client only if we created it
+        if self._admin_client and self._owns_admin_client:
             await self._admin_client.close()
         
         if self._client_pool:

@@ -16,6 +16,12 @@ from rich.panel import Panel
 from benchmark.core.config import load_config, ConfigLoader
 from benchmark.core.runner import BenchmarkRunner
 from benchmark.scenarios.channels import ChannelConcurrencyBenchmark, ChannelWebSocketBenchmark
+from benchmark.auth import (
+    ensure_admin_authenticated,
+    AuthenticationError,
+    ServiceNotReadyError,
+)
+from benchmark.auth.entrypoint import check_auth_status
 
 
 console = Console()
@@ -45,6 +51,76 @@ def list_profiles():
         console.print(f"    Description: {profile.description}")
         console.print(f"    Resources: {profile.resources.cpus} CPUs, {profile.resources.memory} RAM")
         console.print()
+
+
+async def auth_check(target_url: Optional[str] = None):
+    """Check authentication configuration and service status."""
+    console.print("\n[bold]Authentication Status Check[/bold]\n")
+    
+    with console.status("Checking configuration and service..."):
+        status = await check_auth_status(base_url=target_url)
+    
+    # Display results
+    console.print(f"  Service URL: [cyan]{status['service_url']}[/cyan]")
+    
+    if status['service_reachable']:
+        console.print(f"  Service Status: [green]✓ Reachable[/green]")
+    else:
+        console.print(f"  Service Status: [red]✗ Not reachable[/red]")
+    
+    if status['credentials_configured']:
+        console.print(f"  Credentials: [green]✓ Configured[/green]")
+        console.print(f"  Admin Email: [cyan]{status['admin_email']}[/cyan]")
+    else:
+        console.print(f"  Credentials: [red]✗ Not configured[/red]")
+        console.print("    Set ADMIN_USER_EMAIL and ADMIN_USER_PASSWORD environment variables")
+    
+    console.print()
+    
+    # Summary
+    if status['service_reachable'] and status['credentials_configured']:
+        console.print("[green]Ready to run benchmarks![/green]")
+        return True
+    else:
+        console.print("[yellow]Configuration incomplete. Fix issues above before running benchmarks.[/yellow]")
+        return False
+
+
+async def auth_verify(target_url: Optional[str] = None):
+    """Verify authentication by actually signing in."""
+    console.print("\n[bold]Authentication Verification[/bold]\n")
+    
+    try:
+        with console.status("Authenticating..."):
+            client, auth_result = await ensure_admin_authenticated(
+                base_url=target_url,
+                wait_for_service=True,
+                service_wait_retries=10,
+            )
+        
+        console.print(f"  [green]✓ Authentication successful![/green]")
+        console.print(f"  User ID: [cyan]{auth_result.user.id}[/cyan]")
+        console.print(f"  Email: [cyan]{auth_result.user.email}[/cyan]")
+        console.print(f"  Role: [cyan]{auth_result.user.role}[/cyan]")
+        
+        if auth_result.is_new_signup:
+            console.print(f"  [yellow]Note: Created new admin account (first run)[/yellow]")
+        
+        # Clean up
+        await client.close()
+        
+        console.print("\n[green]Ready to run benchmarks![/green]")
+        return True
+        
+    except ServiceNotReadyError as e:
+        console.print(f"  [red]✗ Service not ready: {e}[/red]")
+        return False
+    except AuthenticationError as e:
+        console.print(f"  [red]✗ Authentication failed: {e}[/red]")
+        return False
+    except Exception as e:
+        console.print(f"  [red]✗ Unexpected error: {e}[/red]")
+        return False
 
 
 def list_benchmarks():
@@ -187,6 +263,33 @@ def main():
         help="List available benchmarks",
     )
     
+    # Auth command with subcommands
+    auth_parser = subparsers.add_parser(
+        "auth",
+        help="Authentication commands",
+    )
+    auth_subparsers = auth_parser.add_subparsers(dest="auth_command", help="Auth subcommands")
+    
+    # Auth check subcommand
+    auth_check_parser = auth_subparsers.add_parser(
+        "check",
+        help="Check auth configuration and service status (no actual auth)",
+    )
+    auth_check_parser.add_argument(
+        "-u", "--url",
+        help="Target Open WebUI URL (default: from config)",
+    )
+    
+    # Auth verify subcommand
+    auth_verify_parser = auth_subparsers.add_parser(
+        "verify",
+        help="Verify authentication by signing in",
+    )
+    auth_verify_parser.add_argument(
+        "-u", "--url",
+        help="Target Open WebUI URL (default: from config)",
+    )
+    
     # Run command
     run_parser = subparsers.add_parser(
         "run",
@@ -229,6 +332,15 @@ def main():
         list_profiles()
     elif args.command == "list":
         list_benchmarks()
+    elif args.command == "auth":
+        if args.auth_command == "check":
+            success = asyncio.run(auth_check(target_url=args.url))
+            sys.exit(0 if success else 1)
+        elif args.auth_command == "verify":
+            success = asyncio.run(auth_verify(target_url=args.url))
+            sys.exit(0 if success else 1)
+        else:
+            auth_parser.print_help()
     elif args.command == "run":
         try:
             if args.benchmark == "all":

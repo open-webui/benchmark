@@ -95,33 +95,16 @@ class BenchmarkRunner:
         # Create benchmark instance
         benchmark = benchmark_class(self.config)
         
-        # Execute with progress display
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
-            TaskProgressColumn(),
-            console=console,
-        ) as progress:
-            task = progress.add_task("Running benchmark...", total=100)
+        try:
+            # Execute benchmark (benchmark manages its own progress display)
+            result = await benchmark.execute()
             
-            try:
-                # Setup phase
-                progress.update(task, description="Setting up...", completed=10)
-                
-                # Execute benchmark
-                result = await benchmark.execute()
-                
-                progress.update(task, description="Collecting results...", completed=90)
-                
-                # Store result
-                self._results.append(result)
-                
-                progress.update(task, description="Complete!", completed=100)
-                
-            except Exception as e:
-                console.print(f"[red]Error running benchmark: {e}[/red]")
-                raise
+            # Store result
+            self._results.append(result)
+            
+        except Exception as e:
+            console.print(f"[red]Error running benchmark: {e}[/red]")
+            raise
         
         # Display result summary
         self._display_result_summary(result)

@@ -15,7 +15,8 @@ from rich.panel import Panel
 
 from benchmark.core.config import load_config, ConfigLoader
 from benchmark.core.runner import BenchmarkRunner
-from benchmark.scenarios.channels import ChannelConcurrencyBenchmark, ChannelWebSocketBenchmark
+from benchmark.scenarios.channels import ChannelAPIBenchmark, ChannelWebSocketBenchmark
+from benchmark.scenarios.chat import ChatAPIBenchmark
 from benchmark.auth import (
     ensure_admin_authenticated,
     AuthenticationError,
@@ -128,8 +129,9 @@ def list_benchmarks():
     console.print("\n[bold]Available Benchmarks:[/bold]\n")
     
     benchmarks = [
-        ("channels", ChannelConcurrencyBenchmark),
+        ("channels-api", ChannelAPIBenchmark),
         ("channels-ws", ChannelWebSocketBenchmark),
+        ("chat-api", ChatAPIBenchmark),
     ]
     
     for cmd, benchmark_class in benchmarks:
@@ -139,14 +141,14 @@ def list_benchmarks():
         console.print()
 
 
-async def run_channel_benchmark(
+async def run_channel_api_benchmark(
     profile_id: str = "default",
     target_url: Optional[str] = None,
     max_users: Optional[int] = None,
     step_size: Optional[int] = None,
     output_dir: Optional[str] = None,
 ):
-    """Run the channel concurrency benchmark."""
+    """Run the channel API concurrency benchmark."""
     # Load config with overrides
     overrides = {}
     if target_url:
@@ -172,7 +174,7 @@ async def run_channel_benchmark(
     )
     
     # Run benchmark
-    result = await runner.run_benchmark(ChannelConcurrencyBenchmark)
+    result = await runner.run_benchmark(ChannelAPIBenchmark)
     runner.display_final_summary()
     
     return result
@@ -209,6 +211,41 @@ async def run_channel_ws_benchmark(
     return result
 
 
+async def run_chat_api_benchmark(
+    profile_id: str = "default",
+    target_url: Optional[str] = None,
+    max_users: Optional[int] = None,
+    model: Optional[str] = None,
+    output_dir: Optional[str] = None,
+):
+    """Run the chat API concurrency benchmark."""
+    # Load config with overrides
+    overrides = {}
+    if target_url:
+        overrides["target_url"] = target_url
+    
+    config = load_config(profile_id, overrides=overrides)
+    
+    if max_users:
+        config.chat.max_concurrent_users = max_users
+    
+    if model:
+        config.chat.model = model
+    
+    # Create runner
+    runner = BenchmarkRunner(
+        config=config,
+        profile_id=profile_id,
+        output_dir=Path(output_dir) if output_dir else None,
+    )
+    
+    # Run benchmark
+    result = await runner.run_benchmark(ChatAPIBenchmark)
+    runner.display_final_summary()
+    
+    return result
+
+
 async def run_all_benchmarks(
     profile_id: str = "default",
     target_url: Optional[str] = None,
@@ -229,7 +266,7 @@ async def run_all_benchmarks(
         output_dir=Path(output_dir) if output_dir else None,
     )
     
-    runner.register_benchmark(ChannelConcurrencyBenchmark)
+    runner.register_benchmark(ChannelAPIBenchmark)
     
     # Run all benchmarks
     results = await runner.run_all()
@@ -299,7 +336,7 @@ def main():
         "benchmark",
         nargs="?",
         default="all",
-        choices=["all", "channels", "channels-ws"],
+        choices=["all", "channels-api", "channels-ws", "chat-api"],
         help="Benchmark to run (default: all)",
     )
     run_parser.add_argument(
@@ -320,6 +357,10 @@ def main():
         "-s", "--step-size",
         type=int,
         help="User increment step size (default: 10)",
+    )
+    run_parser.add_argument(
+        "--model",
+        help="Model to use for chat-api benchmark (default: gpt-4o-mini)",
     )
     run_parser.add_argument(
         "-o", "--output",
@@ -349,8 +390,8 @@ def main():
                     target_url=args.url,
                     output_dir=args.output,
                 ))
-            elif args.benchmark == "channels":
-                asyncio.run(run_channel_benchmark(
+            elif args.benchmark == "channels-api":
+                asyncio.run(run_channel_api_benchmark(
                     profile_id=args.profile,
                     target_url=args.url,
                     max_users=args.max_users,
@@ -362,6 +403,14 @@ def main():
                     profile_id=args.profile,
                     target_url=args.url,
                     max_users=args.max_users,
+                    output_dir=args.output,
+                ))
+            elif args.benchmark == "chat-api":
+                asyncio.run(run_chat_api_benchmark(
+                    profile_id=args.profile,
+                    target_url=args.url,
+                    max_users=args.max_users,
+                    model=args.model,
                     output_dir=args.output,
                 ))
             else:

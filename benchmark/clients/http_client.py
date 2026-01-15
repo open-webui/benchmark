@@ -5,8 +5,10 @@ Provides async HTTP methods for authentication, channel management, and messagin
 """
 
 import asyncio
-from typing import Optional, Dict, Any, List, Callable
-from dataclasses import dataclass
+import json
+import time
+from typing import Optional, Dict, Any, List, Callable, AsyncIterator
+from dataclasses import dataclass, field
 import httpx
 
 
@@ -18,6 +20,24 @@ class User:
     name: str
     role: str
     token: str
+
+
+@dataclass
+class StreamingChatResult:
+    """Result from a streaming chat completion."""
+    content: str
+    tokens_generated: int
+    ttft_ms: float  # Time to first token in milliseconds
+    total_duration_ms: float
+    model: str
+    finish_reason: Optional[str] = None
+    
+    @property
+    def tokens_per_second(self) -> float:
+        """Calculate tokens per second."""
+        if self.total_duration_ms > 0:
+            return self.tokens_generated / (self.total_duration_ms / 1000)
+        return 0.0
 
 
 class OpenWebUIClient:
@@ -414,6 +434,222 @@ class OpenWebUIClient:
             await asyncio.sleep(interval)
             elapsed += interval
         return False
+    
+    # ==================== Chat Completions ====================
+    
+    async def get_models(self) -> List[Dict[str, Any]]:
+        """
+        Get list of available models.
+        
+        Returns:
+            List of model dictionaries
+        """
+        response = await self.client.get(
+            "/api/models",
+            headers=self.headers,
+        )
+        response.raise_for_status()
+        data = response.json()
+        # Handle both direct list and wrapped response formats
+        if isinstance(data, list):
+            return data
+        return data.get("data", data.get("models", []))
+    
+    async def verify_model_available(self, model_id: str) -> bool:
+        """
+        Check if a specific model is available.
+        
+        Args:
+            model_id: The model identifier to check
+            
+        Returns:
+            True if model is available, False otherwise
+        """
+        try:
+            models = await self.get_models()
+            model_ids = []
+            for m in models:
+                # Handle different model response formats
+                if isinstance(m, dict):
+                    model_ids.append(m.get("id", ""))
+                    model_ids.append(m.get("name", ""))
+                elif isinstance(m, str):
+                    model_ids.append(m)
+            return model_id in model_ids
+        except Exception:
+            return False
+    
+    async def make_model_public(self, model_id: str) -> bool:
+        """
+        Configure a model to be publicly accessible to all users.
+        
+        This creates a model configuration with access_control=None,
+        which makes the model visible to all users, not just admins.
+        
+        Requires admin authentication.
+        
+        Args:
+            model_id: The model identifier to make public
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            # First check if model config already exists
+            response = await self.client.get(
+                f"/api/v1/models/model?id={model_id}",
+                headers=self.headers,
+            )
+            
+            if response.status_code == 200:
+                # Model config exists, update it
+                existing = response.json()
+                update_payload = {
+                    "id": model_id,
+                    "base_model_id": existing.get("base_model_id", model_id),
+                    "name": existing.get("name", model_id),
+                    "params": existing.get("params", {}),
+                    "meta": existing.get("meta", {}),
+                    "access_control": None,  # None = public access
+                }
+                response = await self.client.post(
+                    "/api/v1/models/model/update",
+                    json=update_payload,
+                    headers=self.headers,
+                )
+            else:
+                # Create new model config with public access
+                model_config = {
+                    "id": model_id,
+                    "base_model_id": model_id,
+                    "name": model_id,
+                    "params": {},
+                    "meta": {
+                        "description": f"Benchmark model: {model_id}",
+                    },
+                    "access_control": None,  # None = public access
+                }
+                response = await self.client.post(
+                    "/api/v1/models/create",
+                    json=model_config,
+                    headers=self.headers,
+                )
+            
+            response.raise_for_status()
+            return True
+        except Exception:
+            return False
+    
+    async def stream_chat_completion(
+        self,
+        messages: List[Dict[str, str]],
+        model: str,
+        temperature: float = 0.7,
+        max_tokens: Optional[int] = None,
+    ) -> StreamingChatResult:
+        """
+        Send a streaming chat completion request and collect the response.
+        
+        Args:
+            messages: List of message dicts with 'role' and 'content'
+            model: Model ID to use
+            temperature: Sampling temperature
+            max_tokens: Maximum tokens to generate
+            
+        Returns:
+            StreamingChatResult with content, timing, and token metrics
+        """
+        payload = {
+            "model": model,
+            "messages": messages,
+            "stream": True,
+            "temperature": temperature,
+        }
+        if max_tokens:
+            payload["max_tokens"] = max_tokens
+        
+        start_time = time.time()
+        first_token_time: Optional[float] = None
+        content_chunks: List[str] = []
+        tokens_generated = 0
+        finish_reason = None
+        
+        async with self.client.stream(
+            "POST",
+            "/api/chat/completions",
+            json=payload,
+            headers=self.headers,
+            timeout=120.0,  # Longer timeout for completions
+        ) as response:
+            response.raise_for_status()
+            
+            async for line in response.aiter_lines():
+                if not line:
+                    continue
+                    
+                # Handle SSE format: "data: {...}"
+                if line.startswith("data: "):
+                    data_str = line[6:]  # Remove "data: " prefix
+                    
+                    if data_str.strip() == "[DONE]":
+                        break
+                    
+                    try:
+                        data = json.loads(data_str)
+                        
+                        # Extract content from delta
+                        choices = data.get("choices", [])
+                        if choices:
+                            delta = choices[0].get("delta", {})
+                            content = delta.get("content", "")
+                            
+                            if content:
+                                # Record time to first token
+                                if first_token_time is None:
+                                    first_token_time = time.time()
+                                
+                                content_chunks.append(content)
+                                tokens_generated += 1  # Approximate: 1 chunk ≈ 1 token
+                            
+                            # Check for finish reason
+                            if choices[0].get("finish_reason"):
+                                finish_reason = choices[0]["finish_reason"]
+                    except json.JSONDecodeError:
+                        continue
+        
+        end_time = time.time()
+        total_duration_ms = (end_time - start_time) * 1000
+        ttft_ms = (first_token_time - start_time) * 1000 if first_token_time else total_duration_ms
+        
+        return StreamingChatResult(
+            content="".join(content_chunks),
+            tokens_generated=tokens_generated,
+            ttft_ms=ttft_ms,
+            total_duration_ms=total_duration_ms,
+            model=model,
+            finish_reason=finish_reason,
+        )
+    
+    async def create_chat(
+        self,
+        title: str = "Benchmark Chat",
+    ) -> Dict[str, Any]:
+        """
+        Create a new chat session.
+        
+        Args:
+            title: Chat title
+            
+        Returns:
+            Created chat data including ID
+        """
+        response = await self.client.post(
+            "/api/v1/chats/new",
+            json={"title": title},
+            headers=self.headers,
+        )
+        response.raise_for_status()
+        return response.json()
 
 
 class ClientPool:

@@ -43,20 +43,20 @@ def generate_message_content(min_length: int = 50, max_length: int = 500) -> str
     return ' '.join(words)[:length]
 
 
-class ChannelConcurrencyBenchmark(BaseBenchmark):
+class ChannelAPIBenchmark(BaseBenchmark):
     """
-    Benchmark for testing channel concurrent user capacity.
+    Benchmark for testing channel concurrent user capacity via API.
     
     This benchmark:
     1. Creates a test channel
     2. Progressively adds users up to a maximum
-    3. Has each user send messages at a configured rate
+    3. Has each user send messages at a configured rate via API
     4. Measures response times and error rates at each level
     5. Identifies the point where performance degrades
     """
     
-    name = "Channel Concurrency"
-    description = "Test concurrent user capacity in Open WebUI Channels"
+    name = "Channel API Concurrency"
+    description = "Test concurrent user capacity in Open WebUI Channels via API"
     version = "1.0.0"
     
     def __init__(

@@ -26,6 +26,10 @@ class TimingRecord:
     error: Optional[str] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
     
+    # Streaming-specific fields
+    time_to_first_token_ms: Optional[float] = None
+    tokens_generated: Optional[int] = None
+    
     @property
     def duration_ms(self) -> float:
         """Get duration in milliseconds."""
@@ -35,6 +39,13 @@ class TimingRecord:
     def duration_seconds(self) -> float:
         """Get duration in seconds."""
         return self.end_time - self.start_time
+    
+    @property
+    def tokens_per_second(self) -> Optional[float]:
+        """Calculate tokens per second for streaming responses."""
+        if self.tokens_generated and self.duration_seconds > 0:
+            return self.tokens_generated / self.duration_seconds
+        return None
 
 
 @dataclass
@@ -55,6 +66,15 @@ class BenchmarkResult:
     p50_response_time_ms: float = 0.0
     p95_response_time_ms: float = 0.0
     p99_response_time_ms: float = 0.0
+    
+    # Streaming-specific metrics (for chat benchmarks)
+    avg_ttft_ms: float = 0.0  # Average time to first token
+    min_ttft_ms: float = 0.0
+    max_ttft_ms: float = 0.0
+    p50_ttft_ms: float = 0.0
+    p95_ttft_ms: float = 0.0
+    avg_tokens_per_second: float = 0.0
+    total_tokens_generated: int = 0
     
     # Throughput
     requests_per_second: float = 0.0
@@ -95,6 +115,15 @@ class BenchmarkResult:
             "p50_response_time_ms": round(self.p50_response_time_ms, 2),
             "p95_response_time_ms": round(self.p95_response_time_ms, 2),
             "p99_response_time_ms": round(self.p99_response_time_ms, 2),
+            # Streaming metrics
+            "avg_ttft_ms": round(self.avg_ttft_ms, 2),
+            "min_ttft_ms": round(self.min_ttft_ms, 2),
+            "max_ttft_ms": round(self.max_ttft_ms, 2),
+            "p50_ttft_ms": round(self.p50_ttft_ms, 2),
+            "p95_ttft_ms": round(self.p95_ttft_ms, 2),
+            "avg_tokens_per_second": round(self.avg_tokens_per_second, 2),
+            "total_tokens_generated": self.total_tokens_generated,
+            # Throughput
             "requests_per_second": round(self.requests_per_second, 2),
             "total_duration_seconds": round(self.total_duration_seconds, 2),
             "error_rate_percent": round(self.error_rate_percent, 2),
@@ -206,6 +235,43 @@ class MetricsCollector:
         )
         self._timings.append(record)
     
+    def record_streaming_timing(
+        self,
+        operation: str,
+        duration_ms: float,
+        ttft_ms: float,
+        tokens_generated: int,
+        success: bool = True,
+        error: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """
+        Record a streaming response timing with TTFT and token metrics.
+        
+        Args:
+            operation: Name of the operation
+            duration_ms: Total duration in milliseconds
+            ttft_ms: Time to first token in milliseconds
+            tokens_generated: Number of tokens in the response
+            success: Whether the operation was successful
+            error: Error message if failed
+            metadata: Optional metadata
+        """
+        now = time.time()
+        duration_seconds = duration_ms / 1000
+        
+        record = TimingRecord(
+            operation=operation,
+            start_time=now - duration_seconds,
+            end_time=now,
+            success=success,
+            error=error,
+            metadata=metadata or {},
+            time_to_first_token_ms=ttft_ms,
+            tokens_generated=tokens_generated,
+        )
+        self._timings.append(record)
+    
     def record_resource_sample(self, cpu_percent: float, memory_mb: float) -> None:
         """
         Record a resource usage sample.
@@ -267,6 +333,32 @@ class MetricsCollector:
             result.p50_response_time_ms = self._percentile(sorted_durations, 50)
             result.p95_response_time_ms = self._percentile(sorted_durations, 95)
             result.p99_response_time_ms = self._percentile(sorted_durations, 99)
+        
+        # Calculate streaming metrics (TTFT, tokens per second)
+        ttft_values = [
+            t.time_to_first_token_ms for t in self._timings 
+            if t.success and t.time_to_first_token_ms is not None
+        ]
+        if ttft_values:
+            result.avg_ttft_ms = statistics.mean(ttft_values)
+            result.min_ttft_ms = min(ttft_values)
+            result.max_ttft_ms = max(ttft_values)
+            sorted_ttft = sorted(ttft_values)
+            result.p50_ttft_ms = self._percentile(sorted_ttft, 50)
+            result.p95_ttft_ms = self._percentile(sorted_ttft, 95)
+        
+        # Calculate tokens per second and total tokens
+        tps_values = [
+            t.tokens_per_second for t in self._timings 
+            if t.success and t.tokens_per_second is not None
+        ]
+        if tps_values:
+            result.avg_tokens_per_second = statistics.mean(tps_values)
+        
+        result.total_tokens_generated = sum(
+            t.tokens_generated for t in self._timings 
+            if t.tokens_generated is not None
+        )
         
         # Calculate duration
         if self._start_time and self._end_time:

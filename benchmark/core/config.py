@@ -74,6 +74,35 @@ class ChannelBenchmarkConfig(BaseModel):
     message_size: Dict[str, int] = Field(default_factory=lambda: {"min": 50, "max": 500, "avg": 200})
 
 
+class ChatBenchmarkConfig(BaseModel):
+    """AI Chat benchmark configuration."""
+    model: str = "gpt-4o-mini"  # Default to cost-efficient model
+    max_concurrent_users: int = 10
+    requests_per_user: int = 5
+    sustain_time: int = 60  # seconds
+    
+    # System prompt for cache optimization (identical across all requests)
+    system_prompt: str = (
+        "You are a helpful assistant. Provide brief, concise answers. "
+        "Keep responses under 50 words unless asked for more detail."
+    )
+    
+    # Pool of short prompts to maximize OpenAI prompt caching
+    # These are designed to be similar enough for caching but varied enough to be realistic
+    prompt_pool: List[str] = Field(default_factory=lambda: [
+        "What is 2+2?",
+        "What is the capital of France?",
+        "Name one primary color.",
+        "What is H2O?",
+        "How many days in a week?",
+        "What is the opposite of hot?",
+        "Name a mammal.",
+        "What color is the sky?",
+        "How many legs does a dog have?",
+        "What is the first letter of the alphabet?",
+    ])
+
+
 class OutputConfig(BaseModel):
     """Output configuration for benchmark results."""
     results_dir: str = "results"
@@ -95,6 +124,7 @@ class BenchmarkConfig(BaseModel):
     output: OutputConfig = Field(default_factory=OutputConfig)
     thresholds: ThresholdsConfig = Field(default_factory=ThresholdsConfig)
     channels: ChannelBenchmarkConfig = Field(default_factory=ChannelBenchmarkConfig)
+    chat: ChatBenchmarkConfig = Field(default_factory=ChatBenchmarkConfig)
     
     # Compute profile
     compute_profile: Optional[ComputeProfile] = None
@@ -216,6 +246,24 @@ class ConfigLoader:
         if msg_freq:
             channels_config.message_frequency = float(msg_freq)
         
+        # Load chat benchmark settings from environment
+        chat_data = data.get("chat", {})
+        chat_config = ChatBenchmarkConfig(**chat_data) if chat_data else ChatBenchmarkConfig()
+        
+        chat_model = os.environ.get("CHAT_BENCHMARK_MODEL")
+        chat_max_users = os.environ.get("CHAT_MAX_CONCURRENT_USERS")
+        chat_requests = os.environ.get("CHAT_REQUESTS_PER_USER")
+        chat_sustain = os.environ.get("CHAT_SUSTAIN_TIME_SECONDS")
+        
+        if chat_model:
+            chat_config.model = chat_model
+        if chat_max_users:
+            chat_config.max_concurrent_users = int(chat_max_users)
+        if chat_requests:
+            chat_config.requests_per_user = int(chat_requests)
+        if chat_sustain:
+            chat_config.sustain_time = int(chat_sustain)
+        
         config = BenchmarkConfig(
             target_url=target_url,
             request_timeout=benchmark_data.get("request_timeout", 30),
@@ -226,6 +274,7 @@ class ConfigLoader:
             output=OutputConfig(**output_data) if output_data else OutputConfig(),
             thresholds=ThresholdsConfig(**thresholds_data) if thresholds_data else ThresholdsConfig(),
             channels=channels_config,
+            chat=chat_config,
             compute_profile=self.get_compute_profile(profile_id),
             use_single_user=use_single_user,
         )

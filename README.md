@@ -18,6 +18,7 @@ This benchmark suite is designed to:
 - Python 3.11+
 - Docker and Docker Compose
 - A running Open WebUI instance (or use the provided Docker setup)
+- Chromium browser (installed automatically via Playwright for UI benchmarks)
 
 ### Installation
 
@@ -26,6 +27,9 @@ cd benchmark
 python -m venv .venv
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 pip install -e .
+
+# Install Playwright browsers (required for UI benchmarks)
+playwright install chromium
 ```
 
 ### Configuration
@@ -59,14 +63,16 @@ cd docker
 # Run all benchmarks
 owb run all
 
-# Run only channel concurrency benchmark
-owb run channels -m 50  # Test up to 50 concurrent users
+# Run specific benchmarks
+owb run chat-api -m 50          # API-based chat benchmark
+owb run chat-ui -m 50 --headless # Browser-based chat benchmark
+owb run channels-api -m 50      # Channel API concurrency
+owb run channels-ws -m 50       # Channel WebSocket benchmark
 
-# Run with a specific target URL
-owb run channels -u http://localhost:3000
-
-# Run with a specific compute profile
-owb run channels -p cloud_medium
+# Run with options
+owb run chat-ui -m 10 --headed --slow-mo 500  # Visual debugging
+owb run chat-api -u http://localhost:3000     # Custom URL
+owb run channels-api -p cloud_medium          # Specific compute profile
 ```
 
 3. **View results:**
@@ -93,7 +99,64 @@ owb profiles
 
 ## Available Benchmarks
 
-### Channel Concurrency (`channels`)
+### Chat API Concurrency (`chat-api`)
+
+Tests concurrent AI chat performance via the OpenAI-compatible API:
+
+- Creates test users and makes a model publicly available
+- Each user sends chat requests via the `/api/chat` endpoint
+- Measures response times, throughput, and error rates
+- Tests the backend's ability to handle concurrent LLM requests
+
+**Usage:**
+
+```bash
+owb run chat-api -m 50 --model gpt-4o-mini
+```
+
+### Chat UI Concurrency (`chat-ui`)
+
+Tests concurrent AI chat performance through actual browser UI using Playwright:
+
+- Launches real Chromium browser instances (or contexts)
+- Each browser logs in as a different user
+- Sends chat messages and waits for streaming responses
+- Measures actual user-experienced response times including rendering
+- Tests full stack performance: UI, backend, and LLM together
+
+**Usage:**
+
+```bash
+# Run in headless mode (default)
+owb run chat-ui -m 50 --model gpt-4o-mini
+
+# Run with visible browsers for debugging
+owb run chat-ui -m 10 --headed
+
+# Slow down operations for visual inspection
+owb run chat-ui -m 5 --headed --slow-mo 500
+```
+
+**Configuration:**
+
+```yaml
+chat_ui:
+  headless: true              # Run browsers in headless mode
+  slow_mo: 0                  # Slow down operations by ms (debugging)
+  viewport_width: 1280        # Browser viewport width
+  viewport_height: 720        # Browser viewport height
+  browser_timeout: 30000      # Default timeout in ms
+  screenshot_on_error: true   # Capture screenshots on failure
+  use_isolated_browsers: false # Use separate browser instances vs contexts
+```
+
+**Notes:**
+- Browser benchmarks require more resources than API benchmarks
+- For high concurrency (50+), use headless mode and browser contexts
+- Headed mode is useful for debugging UI issues
+- The benchmark measures actual streaming response detection
+
+### Channel Concurrency (`channels-api`)
 
 Tests concurrent user capacity in Open WebUI Channels:
 
@@ -115,7 +178,12 @@ channels:
 
 ### Channel WebSocket (`channels-ws`)
 
-Tests WebSocket scalability for real-time message delivery.
+Tests WebSocket scalability for real-time message delivery in Channels:
+
+- Establishes WebSocket connections for multiple users
+- Tests real-time message broadcasting
+- Measures message delivery latency
+- Identifies WebSocket connection limits
 
 ## Configuration
 
@@ -245,10 +313,12 @@ benchmark/
 │   │   ├── metrics.py  # Metrics collection
 │   │   └── runner.py   # Benchmark orchestration
 │   ├── clients/        # API clients
-│   │   ├── http_client.py    # HTTP/REST client
-│   │   └── websocket_client.py # WebSocket client
+│   │   ├── http_client.py      # HTTP/REST client
+│   │   ├── websocket_client.py # WebSocket client
+│   │   └── browser_client.py   # Playwright browser automation
 │   ├── scenarios/      # Benchmark implementations
-│   │   └── channels.py # Channel benchmarks
+│   │   ├── channels.py # Channel benchmarks
+│   │   └── chat_ui.py  # Browser-based chat benchmark
 │   ├── utils/          # Utilities
 │   │   └── docker.py   # Docker management
 │   └── cli.py          # Command-line interface
@@ -269,6 +339,7 @@ The benchmark suite reuses Open WebUI dependencies where possible:
 - `pandas` - Data analysis
 
 **Benchmark-specific:**
+- `playwright` - Browser automation for UI testing
 - `locust` - Load testing (optional, for advanced scenarios)
 - `rich` - Terminal output
 - `docker` - Docker SDK
@@ -282,6 +353,9 @@ The benchmark suite reuses Open WebUI dependencies where possible:
 2. **Authentication errors**: Check admin credentials in config
 3. **Docker resource errors**: Ensure Docker has enough resources allocated
 4. **WebSocket timeout**: Increase `websocket_timeout` in config
+5. **Browser launch failures**: Run `playwright install chromium` to install browsers
+6. **Login timeout in browser tests**: Check that `.env` has correct `ADMIN_USER_NAME` (with quotes if it contains spaces)
+7. **High browser concurrency fails**: Use `--headless` mode and ensure sufficient system resources
 
 ### Debug Mode
 
